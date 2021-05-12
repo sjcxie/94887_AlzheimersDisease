@@ -1,0 +1,215 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+adni.data <- read.csv('/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_wind.csv')
+adni.full <- read.csv("/Users/jinchenxie/Desktop/ML_Pipeline/project/df_ohe_corrected.csv")
+# new.points = read.csv("/Users/jinchenxie/Desktop/ML_Pipeline/project/new_points.csv")
+new.points = read.csv("/Users/jinchenxie/Desktop/ML_Pipeline/project/new_points_log_scaled.csv")
+```
+
+
+```{r}
+adni.data = adni.data %>% mutate(DX_bl=as.factor(DX_bl))
+table(adni.data$DX_bl)
+adni.data$DX_bl
+```
+
+```{r}
+first.adni.full = ddply(adni.full,.(RID), head, 1)
+last.adni.full = ddply(adni.full,.(RID), tail, 1)
+```
+
+```{r}
+table(first.adni.full$DX_bl)
+
+dim(first.adni.full)
+```
+
+
+```{r}
+cohort.ids = adni.data$RID
+adni.sub = adni.full %>% filter(RID %in% cohort.ids)
+last.adni = ddply(adni.sub,.(RID), tail,1)
+adni.data = adni.data %>% mutate(DX_last=as.factor(last.adni$DX))
+```
+
+```{r}
+adni.data <- adni.data %>% mutate(DX_lst= ifelse(DX_last==0, "CN", "MCI"))
+adni.data <- adni.data %>% mutate(DX_lst= ifelse(DX_last==2, "AD", DX_lst))
+adni.data = adni.data %>% mutate(DX_lst=as.factor(DX_lst))
+```
+
+```{r}
+new.points = new.points[sample(nrow(new.points), 3), ]
+```
+
+```{r}
+data_with_cat2 = new.points %>% 
+      mutate(APOE4_Allele = ifelse(APOE4 == 0, '0 Allele',
+                                   ifelse(APOE4 == 1, '1 Allele', '2 Allele'))) %>%
+      mutate(Gender = ifelse(PTGENDER_Female == 1, "F", "M")) %>%
+      mutate(Ethnicity = ifelse(PTETHCAT_Not.Hisp.Latino == 1, "Not Hispanic", "Hispanic")) %>%
+      mutate(Race = ifelse(PTRACCAT_White == 1, "White",
+                           ifelse(PTRACCAT_Am.Indian.Alaskan == 1, "Native American",
+                                  ifelse(PTRACCAT_Asian == 1, "Asian",
+                                         ifelse(PTRACCAT_Black == 1, "Black",
+                                                ifelse(PTRACCAT_Hawaiian.Other.PI == 1, "Hawaiian/PI", "Multi-racial")))))) %>%
+      mutate(Marital_Status = ifelse(PTMARRY_Never.married == 1, "Never Married",
+                                     ifelse(PTMARRY_Married == 1, "Married",
+                                            ifelse(PTMARRY_Widowed == 1, "Widowed", "Divorced"))))
+    
+drops <- c( "APOE4","PTGENDER_Female", 'PTETHCAT_Not.Hisp.Latino', 'PTETHCAT_Hisp.Latino', 'PTRACCAT_White', 'PTRACCAT_Am.Indian.Alaskan', 'PTRACCAT_Asian', 'PTRACCAT_Black', 'PTRACCAT_Hawaiian.Other.PI', 'PTRACCAT_More.than.one', 'PTMARRY_Never.married', 'PTMARRY_Married', 'PTMARRY_Widowed', 'PTMARRY_Divorced', 'tran_1to2_m6', 'tran_1to2_m6to12', 'tran_1to2_m12to24',	'm6_ind', 'm12_ind' )
+data_with_cat2= data_with_cat2[ , !(names(data_with_cat2) %in% drops)]
+```
+
+
+```{r}
+data.0to6 = adni.data
+data.6to12 = adni.data %>% filter(m6_ind==1)
+data.12to24 = adni.data %>% filter(m12_ind==1)
+```
+
+# Labels
+
+```{r}
+data.0to6 %>% select(tran_1to2_m6) %>% mutate_all(as.factor) %>% summary()
+```
+
+```{r}
+data.6to12 %>% select(tran_1to2_m6to12) %>% mutate_all(as.factor) %>% summary()
+```
+
+```{r}
+data.12to24 %>% select(tran_1to2_m12to24) %>% mutate_all(as.factor) %>% summary()
+```
+
+# Baseline demographic
+## Age
+```{r}
+ggplot(adni.data, aes(x=AGE)) + geom_histogram(binwidth = 1,
+                   colour="grey") + scale_x_continuous(breaks= seq(0,90,5))
+```
+
+## gender 
+```{r}
+table(adni.data$PTGENDER_Female)
+data <- data.frame(
+  group=c('male','female'),
+  value=c(385, 266)
+)
+ggplot(data, aes(x="", y=value, fill=group)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) + theme_void() + labs(fill='gender')
+```
+
+
+
+
+
+# Histogram
+```{r}
+num.plot.data = join(data_with_cat, adni.data, by="RID") %>% 
+  select("APOE4_Allele", "Gender", "Ethnicity","Race","Marital_Status","DX_lst")
+
+ggplot() + geom_bar(data=num.plot.data, aes(x=APOE4_Allele, group=DX_lst, fill=DX_lst), alpha=0.4)
+# + geom_label(data=data_with_cat2[1,],  aes_string(x="APOE4_Allele", y=0, label='1'), colour="red") +
+#           geom_label(data=data_with_cat2[2,],  aes_string(x="APOE4_Allele", y=0, label='2'), colour="blue") +
+#           geom_label(data=data_with_cat2[3,],  aes_string(x="APOE4_Allele", y=0, label='3'), colour="green")
+
+ggplot() + geom_density(data=adni.data, aes(x=Hippocampus_bl, group=DX_lst, fill=DX_lst), adjust=1.5, alpha=.4)
+```
+
+# Density plots
+```{r}
+# sub.data.cols = adni.data %>% select(starts_with("RAVLT_"), starts_with("MMSE_")) %>% colnames()
+sub.data.cols = adni.data %>% select(ends_with("_bl")) %>% colnames()
+
+for (name in sub.data.cols){
+  print(ggplot() + geom_density(data=adni.data, aes_string(x=name, group="DX_lst", fill="DX_lst"),adjust=1.5, alpha=.4) +   
+          geom_label(data=new.points[1,],  aes_string(x=name, y=0, label="RID"), colour="red") + 
+          geom_label(data=new.points[2,],  aes_string(x=name, y=0, label="RID"), colour="blue") + 
+          geom_label(data=new.points[3,],  aes_string(x=name, y=0, label="RID"), colour="green"))
+    
+}
+
+ggplot() + geom_density(data=adni.data, aes_string(x=name, group="DX_lst", fill="DX_lst"),adjust=1.5, alpha=.4) +   
+          geom_label(data=new.points[1,],  aes_string(x=name, y=0, label="RID"), colour="red") + 
+          geom_label(data=new.points[2,],  aes_string(x=name, y=0, label="RID"), colour="blue") + 
+          geom_label(data=new.points[3,],  aes_string(x=name, y=0, label="RID"), colour="green")
+# ggplot() + geom_histogram(data=adni.data, aes_string(x="RAVLT_perc_forgetting_bl", group="DX_lst", fill="DX_lst", alpha=.4)) + geom_point(data=new.points, aes(x=RAVLT_perc_forgetting_bl, y=rep(0, dim(new.points)[1])), colour="red")
+```
+
+
+
+```{r}
+getLastDiagnosis <- function (adni.data, adni.full){
+  last.adni = adni.full %>% filter(RID %in% adni.data$RID) %>% ddply(.(RID), tail,1)
+  last.adni.df = adni.data %>% mutate(DX_last=as.factor(last.adni$DX)) %>% 
+    mutate(DX_lst= ifelse(DX_last==0, "CN", "MCI")) %>% 
+    mutate(DX_lst= ifelse(DX_last==2, "AD", DX_lst)) %>% 
+    mutate(DX_lst=as.factor(DX_lst))
+  return(last.adni.df)
+}
+```
+
+```{r}
+# q6w grouped bar chart
+    output$numeric_edaplot <- renderPlot ({
+      ggplot() + geom_density(data=eda.data, aes_string(x=name, group="DX_lst", fill="DX_lst"),adjust=1.5, alpha=.4) +   
+          geom_label(data=new.data[1,],  aes_string(x=name, y=0, label="RID"), colour="red") + 
+          geom_label(data=new.data[2,],  aes_string(x=name, y=0, label="RID"), colour="blue") + 
+          geom_label(data=new.data[3,],  aes_string(x=name, y=0, label="RID"), colour="green")
+    })
+```
+
+```{r}
+# q6w grouped bar chart
+    output$numeric_edaplot <- renderPlot ({
+      ggplot(rec_pembro_by_month, aes(fill=variable, y=value, x=month_yr)) + 
+        geom_bar(position="dodge", stat="identity") + 
+        geom_text(aes(label = value), position = position_dodge(0.9), vjust = 0) +
+        theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) + 
+        ggtitle("Pembro Q3W vs Q6W Ordes by Month") + 
+        xlab("Year-Month") +
+        ylab("Count of Pembro Orders")
+    })
+```
+
+```{r}
+data = read.csv("df_log_scaled.csv", header=TRUE)
+```
+
+
+```{r}
+data_with_cat = adni.data %>% 
+  mutate(APOE4_Allele = ifelse(APOE4 == 0, '0 Allele',
+                               ifelse(APOE4 == 1, '1 Allele', '2 Allele'))) %>%
+  mutate(Gender = ifelse(PTGENDER_Female == 1, "F", "M")) %>%
+  mutate(Ethnicity = ifelse(PTETHCAT_Not.Hisp.Latino == 1, "Not Hispanic", "Hispanic")) %>%
+  mutate(Race = ifelse(PTRACCAT_White == 1, "White",
+                       ifelse(PTRACCAT_Am.Indian.Alaskan == 1, "Native American",
+                              ifelse(PTRACCAT_Asian == 1, "Asian",
+                                     ifelse(PTRACCAT_Black == 1, "Black",
+                                            ifelse(PTRACCAT_Hawaiian.Other.PI == 1, "Hawaiian/PI", "Multi-racial")))))) %>%
+  mutate(Marital_Status = ifelse(PTMARRY_Never.married == 1, "Never Married",
+                                 ifelse(PTMARRY_Married == 1, "Married",
+                                        ifelse(PTMARRY_Widowed == 1, "Widowed", "Divorced")))) %>%
+  mutate(AD_Transition_Time = ifelse(tran_1to2_m6 == 1, 'Within 6M',
+                                     ifelse(tran_1to2_m6to12 == 1, 'Within 12M',
+                                            ifelse(tran_1to2_m12to24 == 1, 'Within 24M', 'Never Transitioned')))) %>%
+  mutate(Time_Indicator = ifelse(m6_ind == 0, 'Removed After 12M',
+                                 ifelse(m12_ind == 0, 'Removed After 6M', 'Used in All Stages')))
+
+drops <- c("APOE4","PTGENDER_Female", 'PTETHCAT_Not.Hisp.Latino', 'PTETHCAT_Hisp.Latino', 'PTRACCAT_White', 'PTRACCAT_Am.Indian.Alaskan', 'PTRACCAT_Asian', 'PTRACCAT_Black', 'PTRACCAT_Hawaiian.Other.PI', 'PTRACCAT_More.than.one', 'PTMARRY_Never.married', 'PTMARRY_Married', 'PTMARRY_Widowed', 'PTMARRY_Divorced', 'tran_1to2_m6', 'tran_1to2_m6to12', 'tran_1to2_m12to24',	'm6_ind', 'm12_ind' )
+data_with_cat= data_with_cat[ , !(names(data_with_cat) %in% drops)]
+```
+
+```{r}
+temp <- join(data_with_cat, adni.data, by='RID')
+temp %>% select("APOE4_Allele", "Gender", "Ethnicity","Race","Marital_Status") %>% select("Gender") %>% class()
+```
+

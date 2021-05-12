@@ -1,0 +1,333 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(data.table)
+library(lubridate)
+library(tidyverse)
+library(stargazer)
+library(tidymodels)
+library(rpart.plot)
+library(shiny)
+library(ADNIMERGE)
+library(plyr)
+library(writexl)
+library(zoo)
+```
+
+
+```{r}
+adni.new <- read.csv("/Users/jinchenxie/Desktop/ML_Pipeline/project/df_ohe_corrected.csv")
+# adni.new <- read.csv("/Users/jinchenxie/Desktop/df_dx_imputed.csv")
+
+```
+
+```{r}
+adni.ids <- unique(adni.new$RID)
+
+adni.ids.2 <- unique(adni.data$RID)
+
+new.ids <- adni.ids[which(!(adni.ids %in% adni.ids.2))]
+
+adni.new.points <- adni.new[which(adni.new$RID %in% new.ids),]
+adni.newpoints.first <- ddply(adni.new.points,.(RID), head,1)
+
+
+write.csv(adni.newpoints.first,'/Users/jinchenxie/Desktop/ML_Pipeline/project/new_points.csv')
+```
+
+
+```{r}
+table(adni.new$DX)
+table(adni.new$DX_bl)
+```
+
+```{r}
+# adni.new <- adni.new %>% mutate(DX_bl_2= ifelse((DX_bl=="SMC"|DX_bl=="CN"), 0, 1))
+# adni.new <- adni.new %>% mutate(DX_bl_2= ifelse(DX_bl=="AD", 2, DX_bl_2))
+# 
+# 
+# adni.new <- adni.new %>% mutate(DX_2= ifelse(DX=="CN", 0, 1))
+# adni.new <- adni.new %>% mutate(DX_2= ifelse(DX=="Dementia", 2, DX_2))
+# 
+# adni.new <- adni.new %>% mutate(DX_bl=DX_bl_2)
+# adni.new <- adni.new %>% mutate(DX=DX_2)
+```
+
+
+0: CN
+1: MCI
+2: AD
+
+
+# Include at least 24 months patients only
+```{r}
+rows.24 = (adni.new[which(adni.new$Month >= 24),])
+length(unique(rows.24$RID))
+rid.atleast.24 = unique(rows.24$RID)
+adni.24 = adni.new[which(adni.new$RID %in% rid.atleast.24),]
+```
+
+
+There are 863 participants who have at least 24 months follow-ups.  
+`adni.24` contains all records for participants who had at least 24 months follow-ups.
+
+
+```{r save dataset version 1}
+write_xlsx(adni.24, "/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_24_v1.xlsx")
+```
+
+
+## participants have 6, 12, 24-month label
+```{r}
+dim(adni.24[which(adni.24$Month == 3),])[1]
+dim(adni.24[which(adni.24$Month == 6),])[1]
+dim(adni.24[which(adni.24$Month == 12),])[1]
+dim(adni.24[which(adni.24$Month == 24),])[1]
+dim(adni.24[which(adni.24$Month == 36),])[1]
+```
+
+There are 592 participants who had at least 24 months follow-ups and had DX label at the 3-month time-point.  
+There are 658 participants who had at least 24 months follow-ups and had DX label at the 6-month time-point.  
+There are 766 participants who had at least 24 months follow-ups and had DX label at the 12-month time-point.  
+There are 798 participants who had at least 24 months follow-ups and had DX label at the 24-month time-point.  
+There are 347 participants who had at least 24 months follow-ups and had DX label at the 36-month time-point.  
+
+```{r}
+rid.3 = unique(adni.new[which(adni.new$Month == 3),]$RID)
+rid.6 = unique(adni.new[which(adni.new$Month == 6),]$RID)
+rid.12 = unique(adni.new[which(adni.new$Month == 12),]$RID)
+rid.24 = unique(adni.new[which(adni.new$Month == 24),]$RID)
+rid.36 = unique(adni.new[which(adni.new$Month == 36),]$RID)
+```
+
+```{r}
+length(unique(adni.new[which((adni.new$RID %in% rid.3)&(adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.12)),]$RID))
+
+length(unique(adni.new[which((adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.12)),]$RID))
+
+length(unique(adni.new[which((adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.24)),]$RID))
+
+length(unique(adni.new[which((adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.24)),]$RID))
+length(unique(adni.new[which((adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.24)),]$RID))
+length(unique(adni.new[which((adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.24)&(adni.new$RID %in% rid.36)),]$RID))
+length(unique(adni.new[which((adni.new$RID %in% rid.3)&(adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.24)),]$RID))
+```
+635 participants had 3-month, 6-month and 12-month labels.  
+1425 participants had both 6-month and 12-month labels. 
+1238 participants had both 6-month and 24-month labels.  
+1326 participants had both 12-month and 24-month labels.  
+1166 participants had 6-month, 12-month and 24-month labels. 
+730 participants had both 12-month, 24-month and 36-month labels.  
+505 participants had 3-month, 6-month, 12-month and 24-month labels.  
+
+Use only participants with 6-month, 12-month and 24-month labels.
+```{r}
+rid.3.6.12 = unique(adni.new[which((adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.3)),]$RID)
+adni.3.6.12 = adni.new[which(adni.new$RID %in% rid.3.6.12),]
+
+rid.6.12.24 = unique(adni.new[which((adni.new$RID %in% rid.6)&(adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.24)),]$RID)
+adni.6.12.24 = adni.new[which(adni.new$RID %in% rid.6.12.24),]
+
+rid.12.24.36 = unique(adni.new[which((adni.new$RID %in% rid.12)&(adni.new$RID %in% rid.24)&(adni.new$RID %in% rid.36)),]$RID)
+adni.12.24.36 = adni.new[which(adni.new$RID %in% rid.12.24.36),]
+```
+
+```{r}
+# adni.24.mci <- adni.24[which(adni.24$DX_bl==1),]
+adni.6.12.24.mci <- adni.6.12.24[which(adni.6.12.24$DX_bl==1),]
+adni.6.12.24.cn <- adni.6.12.24[which(adni.6.12.24$DX_bl==0),]
+
+adni.12.24.36.mci <- adni.12.24.36[which(adni.12.24.36$DX_bl==1),]
+
+adni.3.6.12.mci <- adni.3.6.12[which(adni.3.6.12$DX_bl==1),]
+length(unique(adni.12.24.36.mci$RID))
+```
+
+`adni.6.12.24`: participants had non-missing DX at 6, 12, 24 months visit.  
+
+
+## what if we only consider patients started with CN or MCI?
+
+```{r}
+adni.first <- ddply(adni.new,.(RID), head,1)
+table(adni.first$DX_bl)
+```
+
+There are 450 participants started with CN at their baseline visits.  
+There are 544 participants started with MCI at their baseline visits.  
+
+```{r}
+adni.cn.rid <- adni.first[which(adni.first$DX_bl==0),]$RID
+adni.mci.rid <- adni.first[which(adni.first$DX_bl==1),]$RID
+adni.cn = adni.new[which(adni.new$RID %in% adni.cn.rid),]
+adni.mci = adni.new[which(adni.new$RID %in% adni.mci.rid),]
+```
+
+
+Among participants started with CN, how many (%) had 3, 6, 12, 24-month check-point labels? 
+```{r}
+length(unique(adni.cn[which(adni.cn$Month == 3),]$RID))
+length(unique(adni.cn[which(adni.cn$Month == 3),]$RID))/length(unique(adni.cn$RID))
+length(unique(adni.cn[which(adni.cn$Month == 6),]$RID))
+length(unique(adni.cn[which(adni.cn$Month == 6),]$RID))/length(unique(adni.cn$RID))
+length(unique(adni.cn[which(adni.cn$Month == 12),]$RID))
+length(unique(adni.cn[which(adni.cn$Month == 12),]$RID))/length(unique(adni.cn$RID))
+length(unique(adni.cn[which(adni.cn$Month == 24),]$RID))
+length(unique(adni.cn[which(adni.cn$Month == 24),]$RID))/length(unique(adni.cn$RID))
+```
+
+Among participants started with MCI, how many (%) had 3, 6, 12, 24-month check-point labels? 
+```{r}
+length(unique(adni.mci[which(adni.mci$Month == 3),]$RID))
+length(unique(adni.mci[which(adni.mci$Month == 3),]$RID))/length(unique(adni.mci$RID))
+length(unique(adni.mci[which(adni.mci$Month == 6),]$RID))
+length(unique(adni.mci[which(adni.mci$Month == 6),]$RID))/length(unique(adni.mci$RID))
+length(unique(adni.mci[which(adni.mci$Month == 12),]$RID))
+length(unique(adni.mci[which(adni.mci$Month == 12),]$RID))/length(unique(adni.mci$RID))
+length(unique(adni.mci[which(adni.mci$Month == 24),]$RID))
+length(unique(adni.mci[which(adni.mci$Month == 24),]$RID))/length(unique(adni.mci$RID))
+```
+
+
+
+
+
+
+
+# Add point and transition label (6, 12, 24 point labels and transitions)
+## 0, 3, 6, 12, 24, 36 point label
+```{r}
+adni.point.label <- adni.6.12.24.mci %>% mutate(m0_label=DX_bl)
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m3_label=ifelse(Month==3, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m3_label) %>% #default direction down
+  fill(m3_label, .direction = "up") 
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m6_label=ifelse(Month==6, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m6_label) %>% #default direction down
+  fill(m6_label, .direction = "up")
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m12_label=ifelse(Month==12, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m12_label) %>% #default direction down
+  fill(m12_label, .direction = "up")
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m18_label=ifelse(Month==18, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m18_label) %>% #default direction down
+  fill(m18_label, .direction = "up")
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m24_label=ifelse(Month==24, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m24_label) %>% #default direction down
+  fill(m24_label, .direction = "up")
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m30_label=ifelse(Month==30, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m30_label) %>% #default direction down
+  fill(m30_label, .direction = "up")
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m36_label=ifelse(Month==36, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m36_label) %>% #default direction down
+  fill(m36_label, .direction = "up")
+
+adni.point.label <- adni.point.label %>% group_by(RID) %>%  mutate(m48_label=ifelse(Month==48, DX, NA)) %>% 
+  group_by(RID) %>% 
+  fill(m48_label) %>% #default direction down
+  fill(m48_label, .direction = "up")
+```
+
+## transition label
+Transition from 0 -> 1
+```{r}
+adni.label <- adni.point.label %>% group_by(RID) %>% mutate(tran_0to1_m3=ifelse((m0_label==0 & m3_label==1), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to1_m6=ifelse((m0_label==0 & m6_label==1), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to1_m12=ifelse((m0_label==0 & m12_label==1), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to1_m24=ifelse((m0_label==0 & m24_label==1), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to1_m36=ifelse((m0_label==0 & m36_label==1), 1, 0))
+```
+
+Transition from 1 -> 2
+```{r}
+adni.label <- adni.point.label %>% group_by(RID) %>% mutate(tran_1to2_m3=ifelse((m0_label==1 & m3_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m6=ifelse((m0_label==1 & m6_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m12=ifelse((m0_label==1 & m12_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m18=ifelse((m0_label==1 & m18_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m24=ifelse((m0_label==1 & m24_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m30=ifelse((m0_label==1 & m30_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m36=ifelse((m0_label==1 & m36_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_1to2_m48=ifelse((m0_label==1 & m48_label==2), 1, 0))
+```
+
+```{r}
+adni.label <- adni.label %>% mutate(tran_1to2_m6to12=ifelse((tran_1to2_m12==1 & tran_1to2_m6==0), 1, 0))
+adni.label <- adni.label %>% mutate(tran_1to2_m12to24=ifelse((tran_1to2_m24==1 & tran_1to2_m12==0), 1, 0))
+```
+
+Transition from 0 -> 2
+```{r}
+adni.label <- adni.point.label %>% group_by(RID) %>% mutate(tran_0to2_m3=ifelse((m0_label==0 & m3_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to2_m6=ifelse((m0_label==0 & m6_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to2_m12=ifelse((m0_label==0 & m12_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to2_m24=ifelse((m0_label==0 & m24_label==2), 1, 0))
+adni.label <- adni.label %>% group_by(RID) %>% mutate(tran_0to2_m36=ifelse((m0_label==0 & m36_label==2), 1, 0))
+```
+
+```{r}
+adni.label.first <- ddply(adni.label,.(RID), head,1)
+adni.label.first %>% select(starts_with("tran_")) %>% mutate_all(as.factor) %>% summary()
+```
+
+
+```{r}
+write_xlsx(adni.label, "/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_v3.xlsx")
+write_xlsx(adni.label.first, "/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_v5.xlsx")
+write.csv(adni.label.first,'/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_v5.csv')
+```
+
+```{r}
+adni.label %>% select(RID, Month, DX_bl, DX, starts_with("tran_")) %>% filter(is.na(tran_1to2_m24))
+```
+
+# Last two weeks - label processing
+
+```{r}
+adni.label <- read.csv("/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_v6.csv")
+```
+
+```{r}
+adni.label <- adni.label %>% mutate(m6_ind=ifelse(tran_1to2_m6==1, 0, 1))
+adni.label <- adni.label %>% mutate(m12_ind=ifelse((tran_1to2_m6==1 | tran_1to2_m6to12==1), 0, 1))
+```
+
+```{r}
+model.label.6 <- adni.label %>% filter(m6_ind==1)
+model.label.12 <- adni.label %>% filter(m12_ind==1)
+
+```
+
+```{r}
+write.csv(adni.label,'/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_wind.csv')
+write.csv(model.label.6,'/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_6m_early.csv')
+write.csv(model.label.12,'/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_12m_early.csv')
+```
+
+**Check label % consistency at each time point**
+(e.g. could it be only patients with AD will get to be tested again at 6-month time point?)
+
+```{r}
+table(adni.new$Month)
+```
+
+```{r}
+adni.label <- read.csv("/Users/jinchenxie/Desktop/ML_Pipeline/project/adni_label_wind.csv")
+```
+
+```{r}
+adni.label %>% filter(m12_ind==1) 
+```
