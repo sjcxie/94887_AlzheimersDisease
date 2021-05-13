@@ -39,5 +39,6 @@ Compare model results (blue)
 Run 7_Model_all4models.Rmd
 in: df_log_scaled
 
-
-How to run the R Shiny app? 
+Shint app (puprle)
+Run server.R from pp_randomforest final.zip
+in: new patients_.csv when prompted to upload new patient data
