@@ -1,6 +1,11 @@
 # 94887_AlzheimersDisease
+Authors: Jinchen Xie, Jenny Ding, Yanyi Qian, Zhaoyu Qiao, Ziyi Chen
+
 Contains the codes and dataset used for the Alzheimer's Disease project.
 ![flowchart](https://user-images.githubusercontent.com/55336627/118058703-d06b7b00-b35c-11eb-9a70-0a5430a23227.png)
+
+Data files are located in data folder
+Code files are located in code folder
 
 Data pre-processing (yellow): 
 Run file 1_data_cleaning.ipynb
