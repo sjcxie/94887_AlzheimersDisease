@@ -1,0 +1,589 @@
+---
+title: "Project"
+author: "< >"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r include=F}
+loadlibs = function(libs) {
+  for(lib in libs) {
+    class(lib)
+    if(!do.call(require,as.list(lib))) {install.packages(lib)}
+    do.call(require,as.list(lib))
+  }
+}
+libs = c("tidyverse","tidymodels","naniar", "randomForest", "C50", "xgboost", 'pROC', 'gtsummary', 'glmnet', 'purrr', 'data.table', "lubridate")
+loadlibs(libs)
+```
+
+```{r message=FALSE}
+# Primary interested outcome: tran_1to2_m6, tran_1to2_m6to12, tran_1to2_m12to24
+dat = read_csv("df_log_scaled.csv")
+
+# Data type: from num to factor
+
+# cols = names(dat[,28:42])
+# dat[cols] <- lapply(dat[cols],factor)
+dat$tran_1to2_m6 <- factor(dat$tran_1to2_m6)
+dat$tran_1to2_m6to12 <- factor(dat$tran_1to2_m6to12)
+dat$tran_1to2_m12to24 <- factor(dat$tran_1to2_m12to24)
+str(dat)
+```
+
+```{r}
+# 3 sub_dataset for three output. Remember to remove the patients transfered in past stage
+dat6 = dat[, c(1:41)] %>%
+  mutate_if(is.character,as.factor) %>% 
+  rename(outcome = tran_1to2_m6) %>% # deal with rare factor levels
+  mutate(outcome = fct_rev(outcome))
+
+dat12 = dat[dat$m6_ind == 1, c(1:40, 42)] %>%
+  mutate_if(is.character,as.factor) %>% 
+  rename(outcome = tran_1to2_m6to12) %>% # deal with rare factor levels
+  mutate(outcome = fct_rev(outcome))
+
+dat24 = dat[dat$m6_ind == 1 & dat$m12_ind == 1, c(1:40, 43)] %>% 
+  mutate_if(is.character,as.factor) %>% 
+  rename(outcome = tran_1to2_m12to24) %>% # deal with rare factor levels
+  mutate(outcome = fct_rev(outcome))
+```
+
+### Logistic Regression
+```{r}
+# tran_1to2_m6
+rdat = dat6 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_lr6 = rdat %>% 
+  mutate(model = map(splits, ~
+                       logistic_reg(mode = "classification") %>%
+                       set_engine(engine = "glm") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_lr6 = cv_lr6 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_lr6
+
+# tran_1to2_m6: Confusion Matrix
+threshold=0.001
+predicted_lr6 = cv_lr6 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_lr6 = predicted_lr6 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+# tran_1to2_m6to12
+rdat = dat12 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_lr12 = rdat %>% 
+  mutate(model = map(splits, ~
+                       logistic_reg(mode = "classification") %>%
+                       set_engine(engine = "glm") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_lr12 = cv_lr12 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_lr12
+
+# tran_1to2_m6to12: Confusion Matrix
+threshold=0.01
+predicted_lr12 = cv_lr12 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_lr12 = predicted_lr12 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+# tran_1to2_m12to24
+rdat = dat24 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_lr24 = rdat %>% 
+  mutate(model = map(splits, ~
+                       logistic_reg(mode = "classification") %>%
+                       set_engine(engine = "glm") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_lr24 = cv_lr24 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_lr24
+
+# tran_1to2_m12to24: Confusion Matrix
+threshold=0.06
+predicted_lr24 = cv_lr24 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_lr24 = predicted_lr24 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+# Print confusion matrix
+confusion_lr6
+confusion_lr12
+confusion_lr24
+```
+
+```{r}
+# ROC of Logistic Regression
+roc <- plot(roc(predicted_lr6$y, predicted_lr6$yhat_Y), print.auc = TRUE, col = "blue", print.auc.y = .1, asp = NA)
+roc <- plot(roc(predicted_lr12$y, predicted_lr12$yhat_Y), print.auc = TRUE, col = "green", print.auc.y = .2, asp = NA, add = TRUE)
+roc <- plot(roc(predicted_lr24$y, predicted_lr24$yhat_Y), print.auc = TRUE, col = "purple", print.auc.y = .3, asp = NA, add = TRUE)
+
+legend("bottomright",
+       legend=c("LR1_m6","LR2_m6to12","LR3_m12to24"),
+       col=c("blue", "green", "purple"),
+       lty=c(1,3),
+       lwd=c(2,2))
+```
+
+### Gradient Boosting
+```{r, warning=FALSE}
+# tran_1to2_m6
+rdat = dat6 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_gb6 = rdat %>% 
+  mutate(model = map(splits, ~
+                       boost_tree(mode = "classification") %>%
+                       set_engine("xgboost") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_gb6 = cv_gb6 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_gb6
+
+# tran_1to2_m6: Confusion Matrix
+threshold=0.02
+predicted_gb6 = cv_gb6 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_gb6 = predicted_gb6 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+# tran_1to2_m6to12
+rdat = dat12 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_gb12 = rdat %>% 
+  mutate(model = map(splits, ~
+                       boost_tree(mode = "classification") %>%
+                       set_engine("xgboost") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_gb12 = cv_gb12 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_gb12
+
+# tran_1to2_m6to12: Confusion Matrix
+threshold=0.03
+predicted_gb12 = cv_gb12 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_gb12 = predicted_gb12 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+# tran_1to2_m12to24
+rdat = dat24 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_gb24 = rdat %>% 
+  mutate(model = map(splits, ~
+                       boost_tree(mode = "classification") %>%
+                       set_engine("xgboost") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_gb24 = cv_gb24 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_gb24
+
+# tran_1to2_m12to24: Confusion Matrix
+threshold=0.05
+predicted_gb24 = cv_gb24 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_gb24 = predicted_gb24 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+# Print confusion matrix
+confusion_gb6
+confusion_gb12
+confusion_gb24
+```
+
+```{r}
+# ROC of Gradient Boosting
+roc <- plot(roc(predicted_gb6$y, predicted_gb6$yhat_Y), print.auc = TRUE, col = "blue", print.auc.y = .1, asp = NA)
+roc <- plot(roc(predicted_gb12$y, predicted_gb12$yhat_Y), print.auc = TRUE, col = "green", print.auc.y = .2, asp = NA, add = TRUE)
+roc <- plot(roc(predicted_gb24$y, predicted_gb24$yhat_Y), print.auc = TRUE, col = "purple", print.auc.y = .3, asp = NA, add = TRUE)
+
+legend("bottomright",
+       legend=c("GB1_m6","GB2_m6to12","GB3_m12to24"),
+       col=c("blue", "green", "purple"),
+       lty=c(1,3),
+       lwd=c(2,2))
+```
+
+
+# Decision Tree
+```{r warning=FALSE, message=FALSE}
+# decision tree: tran_1to2_m6,tran_1to2_m6to12, tran_1to2_m12to24
+#tran_1to2_m6
+rdat = dat6 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_dt6 = rdat %>% 
+  mutate(model = map(splits, ~
+                       decision_tree(mode = "classification") %>%
+                       set_engine("rpart") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_dt6 = cv_dt6 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_dt6
+
+# tran_1to2_m6: Confusion Matrix
+threshold=0.03
+predicted_dt6 = cv_dt6 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_dt6 =  predicted_dt6 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+#tran_1to2_m6to12
+rdat = dat12 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_dt12 = rdat %>% 
+  mutate(model = map(splits, ~
+                       decision_tree(mode = "classification") %>%
+                       set_engine("rpart") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_dt12 = cv_dt12 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_dt12
+
+# tran_1to2_m6to12: Confusion Matrix
+threshold=0.04
+predicted_dt12 = cv_dt12 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_dt12 =  predicted_dt12 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+
+#tran_1to2_m12to24
+rdat = dat24 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_dt24 = rdat %>% 
+  mutate(model = map(splits, ~
+                       decision_tree(mode = "classification") %>%
+                       set_engine("rpart") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_dt24 = cv_dt24 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_dt24
+
+# tran_1to2_m12to24: Confusion Matrix
+threshold=0.04
+predicted_dt24 = cv_dt24 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_dt24 =  predicted_dt24 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+# Print confusion matrix
+confusion_dt6
+confusion_dt12
+confusion_dt24
+```
+```{r}
+# ROC of Decision Tree
+roc <- plot(roc(predicted_dt6$y, predicted_dt6$yhat_Y), print.auc = TRUE, col = "blue", print.auc.y = .1, asp = NA)
+roc <- plot(roc(predicted_dt12$y, predicted_dt12$yhat_Y), print.auc = TRUE, col = "green", print.auc.y = .2, asp = NA, add = TRUE)
+roc <- plot(roc(predicted_dt24$y, predicted_dt24$yhat_Y), print.auc = TRUE, col = "purple", print.auc.y = .3, asp = NA, add = TRUE)
+
+legend("bottomright",
+       legend=c("DT1_m6","DT2_m6to12","DT3_m12to24"),
+       col=c("blue", "green", "purple"),
+       lty=c(1,3),
+       lwd=c(2,2))
+```
+
+
+# Random Forest
+```{r}
+# random forest: tran_1to2_m6,tran_1to2_m6to12, tran_1to2_m12to24
+set.seed(123)
+#tran_1to2_m6
+rdat = dat6 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_rf6 = rdat %>% 
+  mutate(model = map(splits, ~
+                       rand_forest(mode = "classification") %>%
+                       set_engine("randomForest") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_rf6 = cv_rf6 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_rf6
+
+# tran_1to2_m6: Confusion Matrix
+threshold=0.04
+predicted_rf6 = cv_rf6 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_rf6 =  predicted_rf6 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+#tran_1to2_m6to12
+rdat = dat12 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_rf12 = rdat %>% 
+  mutate(model = map(splits, ~
+                       rand_forest(mode = "classification") %>%
+                       set_engine("randomForest") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_rf12 = cv_rf12 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_rf12
+
+# tran_1to2_m6to12: Confusion Matrix
+threshold=0.07
+predicted_rf12 = cv_rf12 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_rf12 =  predicted_rf12 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+#tran_1to2_m12to24
+rdat = dat24 %>% rsample::vfold_cv(v=5)  # for cross-validation
+ 
+cv_rf24 = rdat %>% 
+  mutate(model = map(splits, ~
+                       rand_forest(mode = "classification") %>%
+                       set_engine("randomForest") %>%
+                       fit(outcome ~ ., analysis(.x)))) %>%
+  mutate(preds = map2(splits, model, ~
+                        .y %>% predict(type='prob', new_data=assessment(.x))))
+
+cv_rf24 = cv_rf24 %>% 
+  mutate(original = map(splits, ~ assessment(.x)$outcome)) %>%
+  select(id, original, preds) %>% unnest() %>%
+  `colnames<-`(c("fold", "y", "yhat_Y", 'yhat_N'))
+cv_rf24
+
+# tran_1to2_m12to24: Confusion Matrix
+threshold=0.085
+predicted_rf24 = cv_rf24 %>% 
+  mutate(pred_trans = as.character(yhat_Y > threshold) %>%
+               factor(levels=c("TRUE","FALSE"))) %>%
+  mutate(pred_trans = forcats::fct_recode(pred_trans, "1"="TRUE", "0"="FALSE")) %>%
+      mutate(pred_trans = fct_relevel(pred_trans, levels(y)))
+
+confusion_rf24 =  predicted_rf24 %>% 
+      yardstick::conf_mat(y, pred_trans) %>% .[["table"]]
+
+
+# Print confusion matrix
+confusion_rf6
+confusion_rf12
+confusion_rf24
+```
+
+```{r}
+# ROC of Random Forest
+roc <- plot(roc(predicted_rf6$y, predicted_rf6$yhat_Y), print.auc = TRUE, col = "blue", print.auc.y = .1, asp = NA)
+roc <- plot(roc(predicted_rf12$y, predicted_rf12$yhat_Y), print.auc = TRUE, col = "green", print.auc.y = .2, asp = NA, add = TRUE)
+roc <- plot(roc(predicted_rf24$y, predicted_rf24$yhat_Y), print.auc = TRUE, col = "purple", print.auc.y = .3, asp = NA, add = TRUE)
+
+legend("bottomright",
+       legend=c("RF1_m6","RF2_m6to12","RF3_m12to24"),
+       col=c("blue", "green", "purple"),
+       lty=c(1,3),
+       lwd=c(2,2))
+```
+
+
+
+# Predict on new datapoints
+```{r}
+new_points= read_csv("new_points_log_scaled.csv")
+
+# Trainning the final model based on whole dataset
+# Random Forest
+# tran_1to2_m6
+rf6 = rand_forest(mode="classification") %>%
+  set_engine("randomForest") %>%
+  fit(outcome ~ ., dat6) 
+
+# tran_1to2_m6to12
+rf12 = rand_forest(mode="classification") %>%
+  set_engine("randomForest") %>%
+  fit(outcome ~ ., dat12)
+
+# tran_1to2_m12to24
+rf24 = rand_forest(mode="classification") %>%
+  set_engine("randomForest") %>%
+  fit(outcome ~ ., dat24) 
+
+save(rf6, file = 'RandomForest_m6.rda')
+save(rf12, file = 'RandomForest_m12.rda')
+save(rf24, file = 'RandomForest_m24.rda')
+
+# Predictions
+predicted_rf6 = predict(rf6, new_points, type = 'prob')
+predicted_rf12 = predict(rf12, new_points, type = 'prob')
+predicted_rf24 = predict(rf24, new_points, type = 'prob')
+
+predicted_rf6
+predicted_rf12
+predicted_rf24
+
+
+# Output as a whole df
+df <- data.frame(
+                  c(
+                  "Patient 1",
+                  "Patient 2",
+                  "Patient 3"
+                  ),
+                  cbind(predicted_rf6,predicted_rf12,predicted_rf24)
+                )
+names(df) <- c(
+                "Attributes",
+                "yhat_TRUE_rf6",
+                "yhat_FALSE_rf6",
+                "yhat_TRUE_rf12",
+                "yhat_FALSE_rf12",
+                "yhat_TRUE_rf24",
+                "yhat_FALSE_rf24"
+              )
+df
+```
+
+
+```{r message=FALSE}
+# Random Forest model
+# feature importance tree(RF6)
+rf6$fit$importance %>% as.data.frame() %>%  # Plot top importances
+  mutate(name=as.factor(rownames(.))) %>%
+  arrange(MeanDecreaseGini) %>% 
+  mutate(name=factor(name, name)) %>%
+  ggplot(data=.) + geom_bar(aes(x=name, y=MeanDecreaseGini), stat="identity") + coord_flip() + ggtitle('RF Feature Importance by Mean Decrease in Gini_RF1_m6')
+
+# feature importance tree(RF12)
+rf12$fit$importance %>% as.data.frame() %>%  # Plot top importances
+  mutate(name=as.factor(rownames(.))) %>%
+  arrange(MeanDecreaseGini) %>% 
+  mutate(name=factor(name, name)) %>%
+  ggplot(data=.) + geom_bar(aes(x=name, y=MeanDecreaseGini), stat="identity") + coord_flip() + ggtitle('RF Feature Importance by Mean Decrease in Gini_RF2_m6to12')
+
+# feature importance tree(RF24)
+rf24$fit$importance %>% as.data.frame() %>%  # Plot top importances
+  mutate(name=as.factor(rownames(.))) %>%
+  arrange(MeanDecreaseGini) %>% 
+  mutate(name=factor(name, name)) %>%
+  ggplot(data=.) + geom_bar(aes(x=name, y=MeanDecreaseGini), stat="identity") + coord_flip() + ggtitle('RF Feature Importance by Mean Decrease in Gini_RF3_m12to24')
+
+```
+
+
+```{r}
+# RF Feature Importance :new
+set.seed(123)
+# RF6
+#varImpPlot(rf6$fit, n.var = min(20, nrow(rf6$fit$importance)), main = 'Top20 Feature importance in Gini_RF1_m6')
+imp6 <- importance(rf6$fit, scale = FALSE)
+dotchart(sort(imp6[0:20,1]), xlim=c(0,5), xlab="MeanDecreaseGini", main = 'Top20 Feature importance in Gini_RF1_m6',cex = .6, pch = 19, col = c("darkblue","dodgerblue"), cex.main = 2, cex.lab = 1.5)
+
+
+# RF12
+#varImpPlot(rf12$fit, n.var = min(20, nrow(rf12$fit$importance)), main = 'Top20 Feature importance in Gini_RF2_m6to12')
+imp12<- importance(rf12$fit, scale = FALSE)
+dotchart(sort(imp12[0:20,1]), xlim=c(1,7), xlab="MeanDecreaseGini", main = 'Top20 Feature importance in Gini_RF2_m6to12',cex = .6, pch = 19, col = c("darkblue","dodgerblue"), cex.main = 2, cex.lab = 1.5)
+
+# RF24
+#varImpPlot(rf24$fit, n.var = min(20, nrow(rf24$fit$importance)), main = 'Top20 Feature importance in Gini_RF3_m12to24')
+imp24<- importance(rf24$fit, scale = FALSE)
+dotchart(sort(imp24[0:20,1]), xlim=c(2,13), xlab="MeanDecreaseGini", main = 'Top20 Feature importance in Gini_RF3_m12to24',cex = .6, pch = 19, col = c("darkblue","dodgerblue"), cex.main = 2, cex.lab = 1.5)
+```
