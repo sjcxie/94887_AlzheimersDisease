@@ -2,15 +2,15 @@
 Contains the codes and dataset used for the Alzheimer's Disease project.
 ![flowchart](https://user-images.githubusercontent.com/55336627/118058703-d06b7b00-b35c-11eb-9a70-0a5430a23227.png)
 
-- Data pre-processing (yellow): 
-Run file 1_data_cleaning.ipynb
-in: filted_adni_merge
-in: df_cleaned
-in: df_dx_imputed
-out: df_cleaned
-out: df_dx_imputed
-out: df_all_imputed
-out: df_ohe_corrected
+- Data pre-processing (yellow):  
+Run file 1_data_cleaning.ipynb  
+in: filted_adni_merge  
+in: df_cleaned  
+in: df_dx_imputed  
+out: df_cleaned  
+out: df_dx_imputed  
+out: df_all_imputed  
+out: df_ohe_corrected  
 
 - EDA (red): 
 Run file 2_EDA.Rmd, 3_feature_vs_feaure_eda.ipynb
