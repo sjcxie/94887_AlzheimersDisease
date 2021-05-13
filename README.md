@@ -40,5 +40,5 @@ Run 7_Model_all4models.Rmd
 in: df_log_scaled
 
 Shint app (puprle)
-Run server.R from pp_randomforest final.zip
+Run server.R from app_randomforest final.zip
 in: new patients_.csv when prompted to upload new patient data
