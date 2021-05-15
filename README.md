@@ -41,6 +41,6 @@ out: diff_sig_merged
 Run 7_Model_all4models.Rmd  
 in: df_log_scaled  
 
-- Shint app (puprle):  
+- Shiny app (purple):  
 Run server.R from R_Shiny.zip
 in: new patients_.csv when prompted to upload new patient data  
